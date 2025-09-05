@@ -102,3 +102,13 @@ final class MatchesViewModel: OddsSocketDelegate, ObservableObject {
     
     func row(for matchID: Int) -> Row? { rows.first { $0.matchID == matchID } }
 }
+
+extension MatchesViewModel {
+    func odds(for matchID: Int) async -> Odds? {
+        await repo.odds(for: matchID)
+    }
+    
+    func restoreCache() async {
+        await repo.restoreCache()
+    }
+}
