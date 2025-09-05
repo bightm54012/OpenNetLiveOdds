@@ -8,78 +8,62 @@
 import UIKit
 
 class MatchesViewController: UITableViewController {
-
+    
+    private let vm = MatchesViewModel()
+    enum Section { case main }
+    typealias Item = Int
+    private var dataSource: UITableViewDiffableDataSource<Section, Item>!
+    private var reloadCount = 0 { didSet { navigationItem.prompt = "Row reloads: \(reloadCount)" } }
+    private let statusDot = UIView(frame: CGRect(x: 0, y: 0, width: 10, height: 10))
+    
     override func viewDidLoad() {
         super.viewDidLoad()
         
         title = "Live Odds"
+        
+        statusDot.layer.cornerRadius = 5
+        statusDot.backgroundColor = .systemRed
+        navigationItem.rightBarButtonItem = UIBarButtonItem(customView: statusDot)
+        
+        dataSource = UITableViewDiffableDataSource<Section, Item>(tableView: tableView) { [weak self] tableView, indexPath, itemID in
+            let cell = tableView.dequeueReusableCell(withIdentifier: "OddsCell", for: indexPath) as! OddsCell
+            if let row = self?.vm.row(for: itemID) { cell.configure(row: row) }
+            return cell
+        }
+        
+        bindViewModel()
+        vm.start()
     }
-
-    // MARK: - Table view data source
-
-    override func numberOfSections(in tableView: UITableView) -> Int {
-        // #warning Incomplete implementation, return the number of sections
-        return 0
+    
+    private func bindViewModel() {
+        vm.onInitialSnapshot = { [weak self] rows in
+            guard let self = self else { return }
+            var snap = NSDiffableDataSourceSnapshot<Section, Item>()
+            snap.appendSections([.main])
+            snap.appendItems(rows.map { $0.matchID }, toSection: .main)
+            self.dataSource.apply(snap, animatingDifferences: false)
+        }
+        
+        vm.onRowsReconfigure = { [weak self] changedIDs in
+            guard let self = self, !changedIDs.isEmpty else { return }
+            var snap = self.dataSource.snapshot()
+            snap.reconfigureItems(changedIDs)
+            self.dataSource.apply(snap, animatingDifferences: false) { [weak self] in
+                guard let self = self else { return }
+                for case let cell as OddsCell in self.tableView.visibleCells {
+                    if let indexPath = self.tableView.indexPath(for: cell),
+                       let itemID = self.dataSource.itemIdentifier(for: indexPath),
+                       changedIDs.contains(itemID),
+                       let row = self.vm.row(for: itemID) {
+                        cell.configure(row: row)
+                        self.reloadCount += 1
+                    }
+                }
+            }
+        }
+        
+        vm.onConnectionChange = { [weak self] ok in
+            self?.statusDot.backgroundColor = ok ? .systemGreen : .systemRed
+        }
     }
-
-    override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        // #warning Incomplete implementation, return the number of rows
-        return 0
-    }
-
-    /*
-    override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
-        let cell = tableView.dequeueReusableCell(withIdentifier: "reuseIdentifier", for: indexPath)
-
-        // Configure the cell...
-
-        return cell
-    }
-    */
-
-    /*
-    // Override to support conditional editing of the table view.
-    override func tableView(_ tableView: UITableView, canEditRowAt indexPath: IndexPath) -> Bool {
-        // Return false if you do not want the specified item to be editable.
-        return true
-    }
-    */
-
-    /*
-    // Override to support editing the table view.
-    override func tableView(_ tableView: UITableView, commit editingStyle: UITableViewCell.EditingStyle, forRowAt indexPath: IndexPath) {
-        if editingStyle == .delete {
-            // Delete the row from the data source
-            tableView.deleteRows(at: [indexPath], with: .fade)
-        } else if editingStyle == .insert {
-            // Create a new instance of the appropriate class, insert it into the array, and add a new row to the table view
-        }    
-    }
-    */
-
-    /*
-    // Override to support rearranging the table view.
-    override func tableView(_ tableView: UITableView, moveRowAt fromIndexPath: IndexPath, to: IndexPath) {
-
-    }
-    */
-
-    /*
-    // Override to support conditional rearranging of the table view.
-    override func tableView(_ tableView: UITableView, canMoveRowAt indexPath: IndexPath) -> Bool {
-        // Return false if you do not want the item to be re-orderable.
-        return true
-    }
-    */
-
-    /*
-    // MARK: - Navigation
-
-    // In a storyboard-based application, you will often want to do a little preparation before navigation
-    override func prepare(for segue: UIStoryboardSegue, sender: Any?) {
-        // Get the new view controller using segue.destination.
-        // Pass the selected object to the new view controller.
-    }
-    */
-
 }
