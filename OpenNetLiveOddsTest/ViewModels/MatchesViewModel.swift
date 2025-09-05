@@ -6,8 +6,9 @@
 //
 
 import Foundation
+import Combine
 
-final class MatchesViewModel: OddsSocketDelegate {
+final class MatchesViewModel: OddsSocketDelegate, ObservableObject {
     struct Row: Hashable {
         let matchID: Int
         let title: String
@@ -16,15 +17,16 @@ final class MatchesViewModel: OddsSocketDelegate {
         var teamBOdds: Double
     }
     
-    @MainActor var onInitialSnapshot: (([Row]) -> Void)?
-    @MainActor var onRowsReconfigure: (([Int]) -> Void)?
-    @MainActor var onConnectionChange: ((Bool) -> Void)?
+    @Published private(set) var rows: [Row] = []
+    @Published private(set) var isConnected: Bool = false
+    let rowsReconfigured = PassthroughSubject<[Int], Never>()
     
     private let api: MatchesAPI
     private let repo = OddsRepository()
     private var matches: [Match] = []
-    private var rows: [Row] = []
     private var socket: OddsSocketMock?
+    
+    private var cancellables = Set<AnyCancellable>()
     
     init(api: MatchesAPI = MockAPI()) { self.api = api }
     
@@ -53,10 +55,9 @@ final class MatchesViewModel: OddsSocketDelegate {
                 )
                 rowsDict[m.matchID] = row
             }
-            self.rows = Array(rowsDict.values).sorted { $0.start < $1.start }
             
             await MainActor.run {
-                self.onInitialSnapshot?(self.rows)
+                self.rows = Array(rowsDict.values).sorted { $0.start < $1.start }
             }
             
             let s = OddsSocketMock(matchIDs: matches.map { $0.matchID })
@@ -68,7 +69,9 @@ final class MatchesViewModel: OddsSocketDelegate {
     }
     
     func socketDidChangeConnection(connected: Bool) {
-        Task { @MainActor in self.onConnectionChange?(connected) }
+        DispatchQueue.main.async {
+            self.isConnected = connected
+        }
     }
     
     func socketDidReceive(updates: [OddsUpdate]) {
@@ -90,10 +93,12 @@ final class MatchesViewModel: OddsSocketDelegate {
             
             await repo.persistCache()
             
-            await MainActor.run { self.onRowsReconfigure?(Array(reconfiguredIDs)) }
+            await MainActor.run {
+                self.rowsReconfigured.send(Array(reconfiguredIDs))
+                self.rows = self.rows
+            }
         }
     }
     
     func row(for matchID: Int) -> Row? { rows.first { $0.matchID == matchID } }
 }
-
